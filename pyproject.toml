@@ -1,0 +1,5 @@
+[project]
+name = "safe-app-private-ledger"
+version = "1.0.0"
+description = "Local personal budgeting companion — fully private, no cloud sync, paired with Public Ledger."
+requires-python = ">=3.10"
