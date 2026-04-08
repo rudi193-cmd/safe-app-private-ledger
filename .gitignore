@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 .wrangler/
 target/
+.env
+dist/
+*.egg-info/
+.mypy_cache/

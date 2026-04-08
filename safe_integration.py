@@ -7,14 +7,26 @@ Drop point: POST /api/pigeon/drop
 Topics: ask, query, contribute, connect, status
 """
 
+import logging
 import os
 import uuid
+import warnings
+
 import requests
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 WILLOW_URL = os.environ.get("WILLOW_URL", "http://localhost:8420")
 PIGEON_URL = f"{WILLOW_URL}/api/pigeon/drop"
 APP_ID = "safe-app-private-ledger"
+
+if not WILLOW_URL.startswith(("http://localhost", "http://127.0.0.1", "https://")):
+    warnings.warn(
+        f"WILLOW_URL ({WILLOW_URL}) uses plain HTTP to a remote host. "
+        "Auth tokens and data may be sent in cleartext. Use HTTPS for remote hosts.",
+        stacklevel=1,
+    )
 
 _session_id = str(uuid.uuid4())
 
@@ -29,6 +41,7 @@ def ask(prompt: str, persona: Optional[str] = None, tier: str = "free") -> str:
 
 def query(q: str, limit: int = 5) -> list:
     """Query Willow's knowledge graph. Returns a list of matching atoms."""
+    limit = max(1, min(limit, 100))
     result = _drop("query", {"q": q, "limit": limit})
     if result.get("ok"):
         return result.get("result", [])
@@ -58,7 +71,12 @@ def _drop(topic: str, payload: dict) -> dict:
             "session_id": _session_id,
             "payload": payload,
         }, timeout=30)
-        return r.json() if r.ok else {"ok": False, "error": r.text}
+        if not r.ok:
+            return {"ok": False, "error": r.text}
+        try:
+            return r.json()
+        except requests.exceptions.JSONDecodeError:
+            return {"ok": False, "error": "Invalid JSON in response"}
     except requests.ConnectionError:
         return {
             "ok": False,
@@ -66,8 +84,9 @@ def _drop(topic: str, payload: dict) -> dict:
             "error": f"Willow not reachable at {WILLOW_URL}. "
                      "Set WILLOW_URL env var or run Willow locally."
         }
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    except Exception:
+        logger.exception("Pigeon bus request failed")
+        return {"ok": False, "error": "Request failed"}
 
 
 # ── Willow Consent Helpers ────────────────────────────────────────────────────
@@ -75,9 +94,8 @@ def _drop(topic: str, payload: dict) -> dict:
 def get_consent_status(token=None):
     """Check if this app has consent to contribute to the user's Willow."""
     try:
-        import requests as _r
         headers = {"Authorization": f"Bearer {token}"} if token else {}
-        resp = _r.get(f"{WILLOW_URL}/api/apps", headers=headers, timeout=10)
+        resp = requests.get(f"{WILLOW_URL}/api/apps", headers=headers, timeout=10)
         apps = resp.json().get("apps", [])
         return next((a["consented"] for a in apps if a["app_id"] == APP_ID), False)
     except Exception:
@@ -98,11 +116,10 @@ def send(to_app, subject, body, thread_id=None):
 def check_inbox(unread_only=True):
     """Fetch this app's Pigeon inbox from Willow."""
     try:
-        import requests as _r
-        r = _r.get(
+        r = requests.get(
             f"{WILLOW_URL}/api/pigeon/inbox",
             params={"app_id": APP_ID, "unread_only": str(unread_only).lower()},
-            timeout=10
+            timeout=10,
         )
         return r.json().get("messages", []) if r.ok else []
     except Exception:
