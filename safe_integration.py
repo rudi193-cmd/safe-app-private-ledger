@@ -4,7 +4,7 @@ SAFE Framework Integration — Private Ledger
 Pigeon bus helpers for dropping messages to Willow.
 
 Drop point: POST /api/pigeon/drop
-Topics: ask, query, contribute, connect, status
+Topics: ask, query, contribute, send, status
 """
 
 import os
@@ -58,7 +58,12 @@ def _drop(topic: str, payload: dict) -> dict:
             "session_id": _session_id,
             "payload": payload,
         }, timeout=30)
-        return r.json() if r.ok else {"ok": False, "error": r.text}
+        if not r.ok:
+            return {"ok": False, "error": r.text}
+        try:
+            return r.json()
+        except requests.exceptions.JSONDecodeError:
+            return {"ok": False, "error": "Invalid JSON in response"}
     except requests.ConnectionError:
         return {
             "ok": False,
@@ -72,39 +77,38 @@ def _drop(topic: str, payload: dict) -> dict:
 
 # ── Willow Consent Helpers ────────────────────────────────────────────────────
 
-def get_consent_status(token=None):
+def get_consent_status(token: Optional[str] = None) -> bool:
     """Check if this app has consent to contribute to the user's Willow."""
     try:
-        import requests as _r
         headers = {"Authorization": f"Bearer {token}"} if token else {}
-        resp = _r.get(f"{WILLOW_URL}/api/apps", headers=headers, timeout=10)
+        resp = requests.get(f"{WILLOW_URL}/api/apps", headers=headers, timeout=10)
         apps = resp.json().get("apps", [])
         return next((a["consented"] for a in apps if a["app_id"] == APP_ID), False)
     except Exception:
         return False
 
 
-def request_consent_url():
+def request_consent_url() -> str:
     """Return the Willow URL where the user can grant consent to this app."""
     return f"{WILLOW_URL}/apps?highlight={APP_ID}"
 
 
-
-def send(to_app, subject, body, thread_id=None):
+def send(to_app: str, subject: str, body: str, thread_id: Optional[str] = None) -> dict:
     """Send a message to another app's Pigeon inbox."""
-    return _drop("send", {"to": to_app, "subject": subject, "body": body, "thread_id": thread_id})
+    payload: dict = {"to": to_app, "subject": subject, "body": body}
+    if thread_id is not None:
+        payload["thread_id"] = thread_id
+    return _drop("send", payload)
 
 
-def check_inbox(unread_only=True):
+def check_inbox(unread_only: bool = True) -> list:
     """Fetch this app's Pigeon inbox from Willow."""
     try:
-        import requests as _r
-        r = _r.get(
+        r = requests.get(
             f"{WILLOW_URL}/api/pigeon/inbox",
             params={"app_id": APP_ID, "unread_only": str(unread_only).lower()},
-            timeout=10
+            timeout=10,
         )
         return r.json().get("messages", []) if r.ok else []
     except Exception:
         return []
-
