@@ -3,6 +3,8 @@
   "name": "private-ledger",
   "version": "0.1.0",
   "safe_version": ">=2.0.0",
+  "b17": "H7864",
+  "agent_type": "tool",
   "description": "Local personal budgeting companion \u2014 fully private, no cloud sync, paired with Public Ledger.",
   "author": "Sean Campbell",
   "data_streams": [
